@@ -2,7 +2,7 @@
 > **Can an AI system recognize that reality changed and safely change its mind?**
 
 <p align="center">
-  <video src="public/demo.mp4" controls width="100%" style="max-width: 720px; border-radius: 12px;"></video>
+  <video src="https://raw.githubusercontent.com/hafirhalima00-coder/adaptive-mind-ai/master/public/demo.mp4" controls width="100%" style="max-width: 720px; border-radius: 12px;"></video>
 </p>
 
 AdaptiveMind AI is a production-grade autonomous agent platform that continuously monitors its environment, detects changes, and safely adapts its execution plan — while explaining every decision it makes.
