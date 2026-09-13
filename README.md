@@ -352,7 +352,7 @@ This is not just a demo — it's a blueprint for the next generation of autonomo
 | Deliverable | Status | Location |
 |-------------|--------|----------|
 | Working build (repo + live demo) | ✅ | [GitHub](https://github.com/hafirhalima00-coder/adaptive-mind-ai) / [Live Demo](https://adaptive-mind-ai.vercel.app) |
-| 90-second Loom walkthrough | ✅ | See [LOOM-WALKTHROUGH.md](LOOM-WALKTHROUGH.md) for script |
+| 90-second Loom walkthrough | ✅ | [Video Walkthrough](https://youtu.be/CAVwhsIptwU) · [Script](LOOM-WALKTHROUGH.md) |
 | Architecture snapshot | ✅ | See [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Failure test | ✅ | "Cascade Failure" scenario in Simulation Center |
 | Two-year thesis | ✅ | See [THESIS.md](THESIS.md) (300 words) |

@@ -1,3 +1,9 @@
+# Walkthrough Video
+
+**Watch:** https://youtu.be/CAVwhsIptwU
+
+---
+
 # Loom Walkthrough Script (90 seconds)
 
 ## Opening (0-10s)
