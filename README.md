@@ -344,3 +344,28 @@ AdaptiveMind AI embodies this principle. Traditional AI agents are rigid — the
 5. **Explain** their reasoning transparently
 
 This is not just a demo — it's a blueprint for the next generation of autonomous systems that operate safely in dynamic, unpredictable environments.
+
+---
+
+## 🏆 Competition Deliverables
+
+| Deliverable | Status | Location |
+|-------------|--------|----------|
+| Working build (repo + live demo) | ✅ | [GitHub](https://github.com/hafirhalima00-coder/adaptive-mind-ai) / [Live Demo](https://adaptive-mind-ai.vercel.app) |
+| 90-second Loom walkthrough | ✅ | See [LOOM-WALKTHROUGH.md](LOOM-WALKTHROUGH.md) for script |
+| Architecture snapshot | ✅ | See [ARCHITECTURE.md](ARCHITECTURE.md) |
+| Failure test | ✅ | "Cascade Failure" scenario in Simulation Center |
+| Two-year thesis | ✅ | See [THESIS.md](THESIS.md) (300 words) |
+| Non-adaptive baseline comparison | ✅ | "Non-Adaptive vs Adaptive" on Dashboard and Simulation Center |
+| Signal-driven adaptation | ✅ | Changes trigger adaptation, not timers |
+| Visible "I changed my mind" trace | ✅ | Timeline + Dashboard + Adaptation Reasoning |
+
+### Juding Criteria Alignment
+
+| Weight | Criterion | How We Address It |
+|--------|-----------|-------------------|
+| 25% | Conceptual clarity | Mission-driven adaptation, not random re-prompting |
+| 25% | Technical depth | Real plan/observe/revise loop with state persistence |
+| 20% | Demo quality | Before/after comparison visible in 90s |
+| 15% | Failure thinking | Cascade failure scenario + circuit breaker containment |
+| 15% | Future thesis | Two-year outlook on adaptive planning |

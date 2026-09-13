@@ -7,8 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
-import { PulseRing, StatusDot } from '@/components/ui/status-dot';
-import type { AgentState } from '@/types';
+import { StatusDot } from '@/components/ui/status-dot';
+import type { AgentState, FailureContainment } from '@/types';
 import {
   Play,
   Square,
@@ -24,6 +24,9 @@ import {
   XCircle,
   Zap,
   FileText,
+  Shield,
+  ArrowRight,
+  Eye,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -31,10 +34,14 @@ export default function DashboardPage() {
   const [goal, setGoal] = useState('Process a customer order for checkout');
   const [explanation, setExplanation] = useState('');
   const [showExplanation, setShowExplanation] = useState(false);
+  const [containment, setContainment] = useState<FailureContainment | null>(null);
+  const [comparison, setComparison] = useState('');
+  const [showComparison, setShowComparison] = useState(false);
 
   useEffect(() => {
     const unsub = agentStore.onChange(() => {
       setState(agentStore.getState());
+      setContainment(agentStore.getFailureContainment());
     });
     return unsub;
   }, []);
@@ -44,19 +51,22 @@ export default function DashboardPage() {
     agentStore.startAgent(goal);
   }, [goal]);
 
-  const handleStop = useCallback(() => {
-    agentStore.stopAgent();
-  }, []);
-
+  const handleStop = useCallback(() => agentStore.stopAgent(), []);
   const handleReset = useCallback(() => {
     agentStore.resetAgent();
     setShowExplanation(false);
+    setShowComparison(false);
+    setContainment(null);
   }, []);
 
   const handleExplain = useCallback(() => {
-    const exp = agentStore.generateExplanation();
-    setExplanation(exp);
+    setExplanation(agentStore.generateExplanation());
     setShowExplanation(true);
+  }, []);
+
+  const handleCompare = useCallback(() => {
+    setComparison(agentStore.generateComparison());
+    setShowComparison(true);
   }, []);
 
   const confidenceColor =
@@ -70,7 +80,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground">
-            Monitor agent execution, confidence, and environmental changes
+            The Adaptive Agent — <em>&ldquo;I changed my mind because reality changed.&rdquo;</em>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -155,6 +165,33 @@ export default function DashboardPage() {
         />
       </div>
 
+      {containment?.triggered && (
+        <Card className="border-red-500 bg-red-500/5 animate-slide-in">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base text-red-500">
+              <Shield className="h-5 w-5" />
+              Failure Containment Active
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border border-red-500/20 p-3">
+                <p className="text-[10px] font-medium text-red-500">ERROR</p>
+                <p className="text-xs text-muted-foreground mt-1">{containment.originalError}</p>
+              </div>
+              <div className="rounded-lg border border-amber-500/20 p-3">
+                <p className="text-[10px] font-medium text-amber-500">CONTAINMENT</p>
+                <p className="text-xs text-muted-foreground mt-1">{containment.containmentAction}</p>
+              </div>
+              <div className="rounded-lg border border-blue-500/20 p-3">
+                <p className="text-[10px] font-medium text-blue-500">FALLBACK</p>
+                <p className="text-xs text-muted-foreground mt-1">{containment.fallbackStrategy}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
@@ -186,7 +223,7 @@ export default function DashboardPage() {
                           : step.status === 'failed'
                           ? 'border-red-500/30 bg-red-500/5'
                           : step.status === 'skipped'
-                          ? 'border-muted bg-muted/30 opacity-60'
+                          ? 'border-amber-500/30 bg-amber-500/5 opacity-70'
                           : ''
                       }`}
                     >
@@ -197,6 +234,8 @@ export default function DashboardPage() {
                           <XCircle className="h-4 w-4 text-red-500" />
                         ) : step.status === 'in_progress' ? (
                           <Zap className="h-3.5 w-3.5 text-primary" />
+                        ) : step.status === 'skipped' ? (
+                          <ArrowRight className="h-3.5 w-3.5 text-amber-500" />
                         ) : (
                           i + 1
                         )}
@@ -214,12 +253,12 @@ export default function DashboardPage() {
                             : step.status === 'in_progress'
                             ? 'info'
                             : step.status === 'skipped'
-                            ? 'outline'
+                            ? 'warning'
                             : 'secondary'
                         }
                         className="shrink-0 text-[10px]"
                       >
-                        {step.status.replace('_', ' ')}
+                        {step.status === 'skipped' ? 'SAFELY REMOVED' : step.status.replace('_', ' ')}
                       </Badge>
                     </div>
                   ))}
@@ -232,7 +271,8 @@ export default function DashboardPage() {
                   <div>
                     <p className="text-sm font-medium">No active execution</p>
                     <p className="text-xs text-muted-foreground">
-                      Enter a goal and click Start Agent to begin
+                      Enter a goal and click Start Agent to begin. Then trigger changes
+                      from the Simulation Center.
                     </p>
                   </div>
                 </div>
@@ -246,24 +286,35 @@ export default function DashboardPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <GitBranch className="h-4 w-4" />
-                Replan History
+                Adaptation Trace
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-center">
                 <div className="text-3xl font-bold">{state.replanCount}</div>
-                <p className="text-xs text-muted-foreground">Total adaptations</p>
+                <p className="text-xs text-muted-foreground">Replanned</p>
               </div>
               {state.replanCount > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-4 w-full gap-2"
-                  onClick={handleExplain}
-                >
-                  <FileText className="h-3.5 w-3.5" />
-                  View Latest Reasoning
-                </Button>
+                <div className="mt-3 space-y-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-2"
+                    onClick={handleExplain}
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Why I Changed My Mind
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-2"
+                    onClick={handleCompare}
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    Non-Adaptive Comparison
+                  </Button>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -279,7 +330,7 @@ export default function DashboardPage() {
               {state.replanCount > 0 ? (
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Reason</span>
+                    <span className="text-muted-foreground">Trigger</span>
                     <span className="font-medium text-right max-w-[180px] truncate">
                       {state.activeRisks[state.activeRisks.length - 1]?.description || 'Unknown'}
                     </span>
@@ -336,12 +387,28 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Brain className="h-4 w-4" />
-              Adaptation Reasoning
+              Why I Changed My Mind
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <pre className="whitespace-pre-wrap rounded-lg bg-muted p-4 text-xs leading-relaxed">
+            <pre className="whitespace-pre-wrap rounded-lg bg-muted p-4 text-xs leading-relaxed max-h-80 overflow-y-auto">
               {explanation}
+            </pre>
+          </CardContent>
+        </Card>
+      )}
+
+      {showComparison && (
+        <Card className="animate-slide-in">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Eye className="h-4 w-4" />
+              Non-Adaptive vs Adaptive Comparison
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <pre className="whitespace-pre-wrap rounded-lg bg-muted p-4 text-xs leading-relaxed max-h-80 overflow-y-auto">
+              {comparison}
             </pre>
           </CardContent>
         </Card>

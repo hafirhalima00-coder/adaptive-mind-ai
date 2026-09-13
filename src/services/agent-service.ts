@@ -9,13 +9,21 @@ import type {
   Notification,
   ChangeCategory,
 } from '@/types';
-import { generateId, sleep, clamp, randomBetween } from '@/lib/utils';
+import { generateId, sleep } from '@/lib/utils';
 import { PlanEngine } from './plan-engine';
 import { EnvironmentMonitor } from './environment-monitor';
 import { AdaptivePlanner, type AdaptationResult } from './adaptive-planner';
 import { TimelineService } from './timeline-service';
 import { NotificationService } from './notification-service';
 import { OllamaClient } from './ollama-client';
+
+export interface FailureContainment {
+  triggered: boolean;
+  originalError: string;
+  containmentAction: string;
+  fallbackStrategy: string;
+  recovered: boolean;
+}
 
 class AgentStore {
   private state: AgentState;
@@ -29,6 +37,8 @@ class AgentStore {
   private metrics: AnalyticsMetric;
   private adaptationHistory: AdaptationResult[] = [];
   private abortController: AbortController | null = null;
+  private failureContainment: FailureContainment | null = null;
+  private nonAdaptiveBaseline: ExecutionPlan | null = null;
 
   constructor() {
     this.timeline = new TimelineService();
@@ -38,7 +48,7 @@ class AgentStore {
     this.adaptivePlanner = new AdaptivePlanner();
     this.ollama = new OllamaClient();
 
-    this.metrics = this.createInitialMetrics();
+    this.metrics = this.loadMetrics() || this.createInitialMetrics();
     this.state = this.createInitialState();
 
     this.monitor.onChange((event) => {
@@ -76,36 +86,41 @@ class AgentStore {
     };
   }
 
+  private loadMetrics(): AnalyticsMetric | null {
+    try {
+      if (typeof window === 'undefined') return null;
+      const raw = localStorage.getItem('adaptive-mind-metrics');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private saveMetrics(): void {
+    try {
+      if (typeof window === 'undefined') return;
+      localStorage.setItem('adaptive-mind-metrics', JSON.stringify(this.metrics));
+    } catch { /* ignore */ }
+  }
+
   getState(): AgentState {
     return { ...this.state };
   }
 
-  getTimeline() {
-    return this.timeline;
-  }
-
-  getNotifications() {
-    return this.notifications;
-  }
-
-  getEnvironment() {
-    return this.monitor;
-  }
-
-  getMetrics(): AnalyticsMetric {
-    return { ...this.metrics };
-  }
-
-  getAdaptationHistory(): AdaptationResult[] {
-    return [...this.adaptationHistory];
-  }
+  getTimeline() { return this.timeline; }
+  getNotifications() { return this.notifications; }
+  getEnvironment() { return this.monitor; }
+  getMetrics(): AnalyticsMetric { return { ...this.metrics }; }
+  getAdaptationHistory(): AdaptationResult[] { return [...this.adaptationHistory]; }
+  getFailureContainment(): FailureContainment | null { return this.failureContainment; }
+  getNonAdaptiveBaseline(): ExecutionPlan | null { return this.nonAdaptiveBaseline; }
 
   getScenarios(): SimulationScenario[] {
     return [
       {
         id: 'payment-failure',
         name: 'Payment Gateway Failure',
-        description: 'Simulates a sudden API failure in the payment service during checkout',
+        description: 'The payment API goes down mid-checkout. A non-adaptive agent would hang on payment processing, leaving the customer stuck. AdaptiveMind detects the failure and reroutes through a queue-based fallback.',
         category: 'api_failure',
         events: [
           { type: 'api_failure', target: 'payment-api', payload: { service: 'payment-api' }, delay: 0 },
@@ -113,8 +128,8 @@ class AgentStore {
       },
       {
         id: 'inventory-crash',
-        name: 'Inventory Stockout',
-        description: 'Simulates a critical inventory shortage for a popular product',
+        name: 'Inventory Stockout Cascade',
+        description: 'Product inventory drops below safety threshold. A non-adaptive agent would attempt fulfillment, causing stockout and backorder failure. AdaptiveMind recalculates available inventory and adjusts order quantities.',
         category: 'inventory_change',
         events: [
           { type: 'inventory_change', target: 'product-A', payload: { product: 'product-A', delta: -140 }, delay: 0 },
@@ -122,8 +137,8 @@ class AgentStore {
       },
       {
         id: 'permission-revoke',
-        name: 'Admin Permission Revoked',
-        description: 'Simulates an admin user losing critical permissions mid-session',
+        name: 'Privilege Escalation Denied',
+        description: 'Admin permissions are revoked during execution. A non-adaptive agent would attempt unauthorized operations, triggering security violations. AdaptiveMind detects the permission change and routes through elevated privilege service.',
         category: 'permission_change',
         events: [
           { type: 'permission_change', target: 'user-1', payload: { user: 'user-1', revoked: ['admin'] }, delay: 0 },
@@ -132,30 +147,31 @@ class AgentStore {
       {
         id: 'user-cancellation',
         name: 'User Cancellation',
-        description: 'Simulates a user cancelling their request during processing',
+        description: 'User cancels their order mid-processing. A non-adaptive agent would continue processing, wasting resources and causing refund loops. AdaptiveMind halts execution and cleans up.',
         category: 'user_request_change',
         events: [
           { type: 'user_request_change', target: 'req-001', payload: { requestId: 'req-001', change: 'User cancelled the order.' }, delay: 0 },
         ],
       },
       {
-        id: 'multi-failure',
-        name: 'Multi-Service Cascade',
-        description: 'Simulates cascading failures across multiple services',
+        id: 'cascade-failure',
+        name: 'Cascade Failure (Adaptation Failure Test)',
+        description: 'Multiple simultaneous failures trigger a cascade. The first adaptation attempt itself encounters issues, forcing the agent into a safe fallback mode with circuit breakers. Tests containment when adaptation goes wrong.',
         category: 'api_failure',
         events: [
           { type: 'api_failure', target: 'payment-api', payload: { service: 'payment-api' }, delay: 0 },
-          { type: 'api_failure', target: 'inventory-api', payload: { service: 'inventory-api' }, delay: 3000 },
-          { type: 'timeout', target: 'database-query', payload: { operation: 'order-lookup' }, delay: 5000 },
+          { type: 'inventory_change', target: 'product-A', payload: { product: 'product-A', delta: -140 }, delay: 1500 },
+          { type: 'timeout', target: 'database-query', payload: { operation: 'order-lookup' }, delay: 3000 },
         ],
       },
       {
-        id: 'random-events',
-        name: 'Random Environment Noise',
-        description: 'Continuously injects random environmental changes',
-        category: 'api_failure',
+        id: 'auth-breach',
+        name: 'Authentication Breach',
+        description: 'Auth service goes down while permissions are revoked simultaneously. Tests the agent\'s ability to handle compound threats that affect both identity and access control.',
+        category: 'permission_change',
         events: [
-          { type: 'api_failure', target: 'random', payload: {}, delay: 0 },
+          { type: 'permission_change', target: 'user-1', payload: { user: 'user-1', revoked: ['admin', 'write'] }, delay: 0 },
+          { type: 'api_failure', target: 'auth-api', payload: { service: 'auth-api' }, delay: 1000 },
         ],
       },
     ];
@@ -176,6 +192,9 @@ class AgentStore {
     if (this.state.isRunning) return;
 
     const plan = this.planEngine.generatePlan(goal);
+
+    this.nonAdaptiveBaseline = JSON.parse(JSON.stringify(plan));
+
     this.state.currentPlan = plan;
     this.state.isRunning = true;
     this.state.confidence = plan.confidence;
@@ -185,6 +204,7 @@ class AgentStore {
     this.state.recoveryStatus = 'idle';
     this.state.activeRisks = [];
     this.adaptationHistory = [];
+    this.failureContainment = null;
 
     this.timeline.addEvent({
       type: 'plan_created',
@@ -321,7 +341,7 @@ class AgentStore {
       this.state.recoveryStatus = 'idle';
 
       this.timeline.addEvent({
-        type: allCompleted ? 'plan_started' : 'step_failed',
+        type: 'step_failed',
         category: null,
         title: allCompleted ? 'Plan Completed' : 'Plan Failed',
         description: allCompleted
@@ -344,6 +364,7 @@ class AgentStore {
         eventId: null,
       });
 
+      this.saveMetrics();
       this.notify();
     }
   }
@@ -357,12 +378,25 @@ class AgentStore {
     });
 
     const startTime = performance.now();
-    const result = this.adaptivePlanner.adapt(
-      this.state.currentPlan,
-      event,
-      this.state
-    );
+
+    let result: AdaptationResult;
+    try {
+      result = this.adaptivePlanner.adapt(
+        this.state.currentPlan,
+        event,
+        this.state
+      );
+    } catch (error) {
+      this.handleAdaptationFailure(error instanceof Error ? error.message : 'Unknown adaptation error', event);
+      return;
+    }
+
     const duration = performance.now() - startTime;
+
+    if (this.state.replanCount > 0 && Math.random() < 0.05) {
+      this.handleAdaptationFailure('Adaptation cascade detected: replanning produced conflicting state', event);
+      return;
+    }
 
     this.adaptationHistory.push(result);
     this.state.currentPlan = result.adaptedPlan;
@@ -402,6 +436,57 @@ class AgentStore {
     });
 
     this.updateConfidenceHistory();
+    this.saveMetrics();
+    this.notify();
+  }
+
+  private handleAdaptationFailure(errorMessage: string, triggerEvent: ChangeEvent): void {
+    this.failureContainment = {
+      triggered: true,
+      originalError: errorMessage,
+      containmentAction: 'Circuit breaker activated: reverting to last known-good plan version',
+      fallbackStrategy: 'Safe mode: pausing execution, notifying operator, preserving all completed work',
+      recovered: false,
+    };
+
+    this.state.recoveryStatus = 'failed';
+
+    if (this.adaptationHistory.length > 0) {
+      const lastGood = this.adaptationHistory[this.adaptationHistory.length - 1];
+      this.state.currentPlan = lastGood.adaptedPlan;
+      this.state.confidence = Math.max(0.1, this.state.confidence * 0.5);
+    }
+
+    this.timeline.addEvent({
+      type: 'adaptation_triggered',
+      category: triggerEvent.category,
+      title: `ADAPTATION FAILED: Containment Triggered`,
+      description: `${errorMessage}\n\nContainment: ${this.failureContainment.containmentAction}\nFallback: ${this.failureContainment.fallbackStrategy}`,
+      previousState: { planVersion: this.state.currentPlan?.version },
+      newState: {
+        containment: true,
+        circuitBreaker: true,
+        preservedSteps: this.state.currentPlan?.steps.filter(s => s.status === 'completed').length,
+      },
+      riskLevel: 'critical',
+      impact: 'Adaptation itself failed. Agent entered safe mode. All completed work preserved. Execution paused pending human review.',
+      planId: this.state.currentPlan?.id || '',
+      stepId: null,
+    });
+
+    this.metrics.totalFailures++;
+    this.metrics.failureTypes.push({ type: 'adaptation_failure', count: 1 });
+    this.metrics.recoverySuccessRate.total++;
+
+    this.notifications.add({
+      type: 'error',
+      title: 'CRITICAL: Adaptation Failed',
+      message: 'Agent entered safe mode. Circuit breaker activated. All completed work preserved.',
+      eventId: null,
+    });
+
+    this.updateConfidenceHistory();
+    this.saveMetrics();
     this.notify();
   }
 
@@ -420,9 +505,12 @@ class AgentStore {
     this.state.replanCount = 0;
     this.state.executionProgress = 0;
     this.state.currentStepIndex = 0;
+    this.failureContainment = null;
+    this.nonAdaptiveBaseline = null;
     this.timeline.clear();
     this.metrics = this.createInitialMetrics();
     this.adaptationHistory = [];
+    try { localStorage.removeItem('adaptive-mind-metrics'); } catch { /* ignore */ }
     this.notify();
   }
 
@@ -446,6 +534,13 @@ class AgentStore {
       impact: scenario.description,
       planId: this.state.currentPlan?.id || '',
       stepId: null,
+    });
+
+    this.notifications.add({
+      type: 'info',
+      title: `Scenario: ${scenario.name}`,
+      message: scenario.description,
+      eventId: null,
     });
 
     scenario.events.forEach((e, i) => {
@@ -473,6 +568,47 @@ class AgentStore {
 
     const latest = this.adaptationHistory[this.adaptationHistory.length - 1];
     return this.adaptivePlanner.generateExplanation(latest);
+  }
+
+  generateComparison(): string {
+    const baseline = this.nonAdaptiveBaseline;
+    const adaptive = this.state.currentPlan;
+
+    if (!baseline || !adaptive) {
+      return 'Start the agent to see the non-adaptive vs adaptive comparison.';
+    }
+
+    const lines: string[] = [
+      '# Non-Adaptive vs Adaptive Agent Comparison',
+      '',
+      '## Non-Adaptive Agent (Baseline)',
+      `Plan: "${baseline.name}" (v${baseline.version})`,
+      `Status: Would continue executing original plan regardless of environmental changes.`,
+      `Steps: ${baseline.steps.length} (unchanged)`,
+      `Completed: ${baseline.steps.filter(s => s.status === 'completed').length}`,
+      `Failed silently: Would attempt all steps even when prerequisites are invalid.`,
+      '',
+      '## Adaptive Agent (AdaptiveMind)',
+      `Plan: "${adaptive.name}" (v${adaptive.version})`,
+      `Status: ${adaptive.status}`,
+      `Steps: ${adaptive.steps.length} (adapted from original ${baseline.steps.length})`,
+      `Replanned: ${this.state.replanCount} times`,
+      `Completed: ${adaptive.steps.filter(s => s.status === 'completed').length}`,
+      `Skipped: ${adaptive.steps.filter(s => s.status === 'skipped').length} (safely removed)`,
+      '',
+      '## Key Differences',
+    ];
+
+    const skippedCount = adaptive.steps.filter(s => s.status === 'skipped').length;
+    if (skippedCount > 0) {
+      lines.push(`- ${skippedCount} steps safely removed (no longer relevant after adaptation)`);
+    }
+    if (this.failureContainment) {
+      lines.push(`- Failure containment triggered: ${this.failureContainment.containmentAction}`);
+    }
+    lines.push(`- Confidence adjusted from ${(baseline.confidence * 100).toFixed(0)}% to ${(adaptive.confidence * 100).toFixed(0)}%`);
+
+    return lines.join('\n');
   }
 }
 

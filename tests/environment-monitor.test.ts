@@ -17,27 +17,27 @@ describe('EnvironmentMonitor', () => {
   });
 
   it('should simulate API failure', () => {
-    const event = monitor.simulateApiFailure('payment-api');
+    const event = monitor.simulateApiFailure({ service: 'payment-api' });
     expect(event.category).toBe('api_failure');
     expect(event.riskLevel).toBe('high');
     expect(monitor.getState().apiStatus['payment-api']).toBe('down');
   });
 
   it('should simulate inventory changes', () => {
-    const event = monitor.simulateInventoryChange('product-A', { product: 'product-A', delta: -30 });
+    const event = monitor.simulateInventoryChange({ product: 'product-A', delta: -30 });
     expect(event.category).toBe('inventory_change');
     expect(monitor.getState().inventory['product-A']).toBe(120);
   });
 
   it('should simulate permission changes', () => {
-    const event = monitor.simulatePermissionChange('user-1', { user: 'user-1', revoked: ['admin'] });
+    const event = monitor.simulatePermissionChange({ user: 'user-1', revoked: ['admin'] });
     expect(event.category).toBe('permission_change');
     expect(event.riskLevel).toBe('critical');
     expect(monitor.getState().userPermissions['user-1']).not.toContain('admin');
   });
 
   it('should simulate timeouts', () => {
-    const event = monitor.simulateTimeout('database-query');
+    const event = monitor.simulateTimeout({ operation: 'database-query' });
     expect(event.category).toBe('timeout');
     expect(event.riskLevel).toBe('medium');
   });
@@ -45,10 +45,10 @@ describe('EnvironmentMonitor', () => {
   it('should emit events to listeners', () => {
     const events: any[] = [];
     const unsub = monitor.onChange((e) => events.push(e));
-    monitor.simulateApiFailure('test-api');
+    monitor.simulateApiFailure({ service: 'test-api' });
     expect(events.length).toBe(1);
     unsub();
-    monitor.simulateApiFailure('another-api');
+    monitor.simulateApiFailure({ service: 'another-api' });
     expect(events.length).toBe(1);
   });
 
@@ -56,7 +56,7 @@ describe('EnvironmentMonitor', () => {
     const events: any[] = [];
     monitor.onChange((e) => events.push(e));
     monitor.destroy();
-    monitor.simulateApiFailure('test');
+    monitor.simulateApiFailure({ service: 'test' });
     expect(events.length).toBe(0);
   });
 });

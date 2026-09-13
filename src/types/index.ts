@@ -116,3 +116,11 @@ export interface AgentState {
   executionProgress: number;
   currentStepIndex: number;
 }
+
+export interface FailureContainment {
+  triggered: boolean;
+  originalError: string;
+  containmentAction: string;
+  fallbackStrategy: string;
+  recovered: boolean;
+}
